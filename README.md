@@ -137,27 +137,6 @@ The template [`.env.example`](.env.example) documents the same keys inline; add 
 
 ---
 
-## Logging in code
-
-```ts
-import { logger } from "./logger.js";
-
-logger.info("Connected");
-logger.warn("Stale mid", { coin: "BTC" });
-```
-
-`main.ts` calls `setLogLevel(cfg.LOG_LEVEL)` after validation so the process and modules share one level.
-
----
-
-## Security checklist
-
-- Do not commit **`.env`** or keys.
-- Use a **low-balance** or **vault-segregated** key for experiments.
-- Read Hyperliquid’s latest guidance on signing, nonces, and API limits before mainnet automation.
-
----
-
 ## npm scripts
 
 | Script | Command |
