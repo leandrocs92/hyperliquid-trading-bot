@@ -2,12 +2,6 @@
 
 TypeScript bot for [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) perpetuals: live mid prices over WebSocket, periodic account polling, pluggable strategy, risk checks, and optional order submission via [`@nktkas/hyperliquid`](https://www.npmjs.com/package/@nktkas/hyperliquid) and [viem](https://viem.sh/).
 
-Trading is **off by default** (`TRADING_ENABLED=false`). Treat live perps and private keys as high risk. ⚠️
-
-[![Telegram](https://img.shields.io/badge/Telegram-@toptrendev_66-2CA5E0?style=for-the-badge&logo=telegram)](https://t.me/TopTrenDev_66)
-[![Twitter](https://img.shields.io/badge/Twitter-@toptrendev-1DA1F2?style=for-the-badge&logo=x)](https://x.com/intent/follow?screen_name=toptrendev)
-[![Gmail](https://img.shields.io/badge/Gmail-marekdvojak146%40gmail.com-D14836?style=for-the-badge&logo=gmail)](mailto:marekdvojak146@gmail.com)
-
 
 ## Setup 🚀
 

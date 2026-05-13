@@ -1,6 +1,6 @@
 import { formatPrice, formatSize } from "@nktkas/hyperliquid/utils";
 import type { AppConfig } from "../config.js";
-import type { Logger } from "../logger.js";
+import { logger } from "../logger.js";
 import type { Strategy, StrategyContext, StrategyDecision } from "./types.js";
 
 function avg(xs: number[]): number {
@@ -10,7 +10,7 @@ function avg(xs: number[]): number {
 export class DualMovingAverageStrategy implements Strategy {
   readonly name = "dual_ma";
 
-  onMidSample(ctx: StrategyContext, config: AppConfig, log: Logger): StrategyDecision {
+  onMidSample(ctx: StrategyContext, config: AppConfig): StrategyDecision {
     const { midHistory, positionSizeBase, assetId, szDecimals } = ctx;
     const fastN = config.DUAL_MA_FAST;
     const slowN = config.DUAL_MA_SLOW;
@@ -35,17 +35,17 @@ export class DualMovingAverageStrategy implements Strategy {
       try {
         sizeStr = formatSize(rawSize, szDecimals);
       } catch (e) {
-        log.warn({ err: e }, "formatSize failed for entry");
+        logger.warn("formatSize failed for entry", { err: e });
         return { type: "none", reason: "size_rounded_to_zero" };
       }
       let buyPx: string;
       try {
         buyPx = formatPrice(mid * (1 + config.IOC_SLIPPAGE_BPS / 10_000), szDecimals, "perp");
       } catch (e) {
-        log.warn({ err: e }, "formatPrice failed for buy");
+        logger.warn("formatPrice failed for buy", { err: e });
         return { type: "none", reason: "price_format_failed" };
       }
-      log.info({ fast, slow, mid, buyPx, sizeStr }, "dual_ma long signal");
+      logger.info("dual_ma long signal", { fast, slow, mid, buyPx, sizeStr });
       return {
         type: "place_orders",
         note: "dual_ma_enter_long",
@@ -68,17 +68,17 @@ export class DualMovingAverageStrategy implements Strategy {
       try {
         sizeStr = formatSize(rawSize, szDecimals);
       } catch (e) {
-        log.warn({ err: e }, "formatSize failed for exit");
+        logger.warn("formatSize failed for exit", { err: e });
         return { type: "none", reason: "exit_size_rounded_to_zero" };
       }
       let sellPx: string;
       try {
         sellPx = formatPrice(mid * (1 - config.IOC_SLIPPAGE_BPS / 10_000), szDecimals, "perp");
       } catch (e) {
-        log.warn({ err: e }, "formatPrice failed for sell");
+        logger.warn("formatPrice failed for sell", { err: e });
         return { type: "none", reason: "exit_price_format_failed" };
       }
-      log.info({ fast, slow, mid, sellPx, sizeStr }, "dual_ma exit signal");
+      logger.info("dual_ma exit signal", { fast, slow, mid, sellPx, sizeStr });
       return {
         type: "place_orders",
         note: "dual_ma_exit_long",

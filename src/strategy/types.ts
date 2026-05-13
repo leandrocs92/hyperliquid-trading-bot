@@ -1,5 +1,4 @@
 import type { AppConfig } from "../config.js";
-import type { Logger } from "../logger.js";
 
 export type OrderIntent = {
   assetIndex: number;
@@ -26,5 +25,5 @@ export type StrategyContext = {
 
 export interface Strategy {
   readonly name: string;
-  onMidSample(ctx: StrategyContext, config: AppConfig, log: Logger): StrategyDecision;
+  onMidSample(ctx: StrategyContext, config: AppConfig): StrategyDecision;
 }

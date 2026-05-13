@@ -1,5 +1,5 @@
 import type { AppConfig } from "./config.js";
-import type { Logger } from "./logger.js";
+import { logger } from "./logger.js";
 import type { OrderIntent } from "./strategy/types.js";
 
 export type RiskContext = {
@@ -19,7 +19,6 @@ export function applyRisk(
   intents: OrderIntent[],
   ctx: RiskContext,
   _config: AppConfig,
-  log: Logger,
 ): RiskResult {
   if (intents.length === 0) {
     return { ok: false, reason: "no_intents" };
@@ -44,16 +43,18 @@ export function applyRisk(
     const projectedUsd = Math.abs(projectedBase * ctx.mid);
 
     if (projectedUsd > ctx.maxPositionUsd + 1e-6) {
-      log.warn(
-        { projectedUsd, max: ctx.maxPositionUsd, positionSizeBase: ctx.positionSizeBase, deltaBase },
-        "risk_block_max_position",
-      );
+      logger.warn("risk_block_max_position", {
+        projectedUsd,
+        max: ctx.maxPositionUsd,
+        positionSizeBase: ctx.positionSizeBase,
+        deltaBase,
+      });
       return { ok: false, reason: "would_exceed_max_position_usd" };
     }
 
     const orderUsd = sz * ctx.mid;
     if (!o.reduceOnly && orderUsd > ctx.orderNotionalUsd * 1.05) {
-      log.warn({ orderUsd, cap: ctx.orderNotionalUsd }, "risk_block_order_notional");
+      logger.warn("risk_block_order_notional", { orderUsd, cap: ctx.orderNotionalUsd });
       return { ok: false, reason: "order_notional_too_large" };
     }
   }

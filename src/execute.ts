@@ -1,8 +1,8 @@
 import type { ExchangeClient } from "@nktkas/hyperliquid";
-import type { Logger } from "./logger.js";
+import { logger } from "./logger.js";
 import type { OrderIntent } from "./strategy/types.js";
 
-export async function placeOrders(exchange: ExchangeClient, orders: OrderIntent[], log: Logger) {
+export async function placeOrders(exchange: ExchangeClient, orders: OrderIntent[]) {
   if (orders.length === 0) return;
 
   const payload = {
@@ -17,7 +17,7 @@ export async function placeOrders(exchange: ExchangeClient, orders: OrderIntent[
     grouping: "na" as const,
   };
 
-  log.info({ count: orders.length, payload }, "submitting_orders");
+  logger.info("submitting_orders", { count: orders.length, payload });
   const res = await exchange.order(payload);
-  log.info({ res }, "order_response");
+  logger.info("order_response", { res });
 }

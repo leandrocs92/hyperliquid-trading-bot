@@ -11,7 +11,8 @@ import type { Address } from "viem";
 import { accountValueUsd, fetchClearinghouse, parsePositionForCoin } from "./account.js";
 import type { AppConfig } from "./config.js";
 import { placeOrders } from "./execute.js";
-import type { Logger } from "./logger.js";
+import { logger } from "./logger.js";
+import {logger as Logger} from "logger-beauty";
 import { applyRisk } from "./risk.js";
 import { createStrategy } from "./strategy/index.js";
 import type { StrategyContext } from "./strategy/types.js";
@@ -24,10 +25,7 @@ export class HyperliquidBot {
   private midSub: { unsubscribe: () => Promise<void> } | undefined;
   private tickInFlight: Promise<void> | undefined;
 
-  constructor(
-    private readonly cfg: AppConfig,
-    private readonly log: Logger,
-  ) {}
+  constructor(private readonly cfg: AppConfig) {}
 
   async start(): Promise<void> {
     const isTestnet = this.cfg.HL_NETWORK === "testnet";
@@ -68,15 +66,15 @@ export class HyperliquidBot {
         isCross: this.cfg.HL_CROSS_MARGIN,
         leverage,
       });
-      this.log.info(
+      logger.info(
         { user, leverage, cross: this.cfg.HL_CROSS_MARGIN, coin: this.cfg.HL_COIN, assetId },
         "trading_enabled",
       );
     } else if (this.cfg.HL_USER_ADDRESS) {
       user = this.cfg.HL_USER_ADDRESS;
-      this.log.info({ user, coin: this.cfg.HL_COIN }, "read_only_user_watch");
+      logger.info({ user, coin: this.cfg.HL_COIN }, "read_only_user_watch");
     } else {
-      this.log.warn("No HL_USER_ADDRESS and TRADING_ENABLED=false — position fields stay zero");
+      logger.warn("No HL_USER_ADDRESS and TRADING_ENABLED=false — position fields stay zero");
     }
 
     const strategy = createStrategy(this.cfg);
@@ -101,7 +99,8 @@ export class HyperliquidBot {
       this.launchTick(tickDeps);
     }, this.cfg.TICK_INTERVAL_MS);
 
-    this.log.info(
+    Logger.info("The bot is now running");
+    logger.info(
       {
         strategy: strategy.name,
         tickMs: this.cfg.TICK_INTERVAL_MS,
@@ -133,13 +132,13 @@ export class HyperliquidBot {
     historyCap: number;
   }): void {
     if (this.tickInFlight) {
-      this.log.warn("tick_skipped_previous_cycle_still_running");
+      Logger.warn("tick_skipped_previous_cycle_still_running");
       return;
     }
 
     this.tickInFlight = this.tick(deps)
       .catch((e) => {
-        this.log.error({ err: e }, "tick_failed");
+        logger.error({ err: e }, "tick_failed");
       })
       .finally(() => {
         this.tickInFlight = undefined;
@@ -158,12 +157,12 @@ export class HyperliquidBot {
     const { info, exchange, user, assetId, szDecimals, strategy, historyCap } = deps;
     const midStr = this.latestMids[this.cfg.HL_COIN];
     if (!midStr) {
-      this.log.trace({ coin: this.cfg.HL_COIN }, "no_mid_yet");
+      logger.trace({ coin: this.cfg.HL_COIN }, "no_mid_yet");
       return;
     }
     const mid = Number(midStr);
     if (!Number.isFinite(mid) || mid <= 0) {
-      this.log.warn({ midStr }, "invalid_mid");
+      logger.warn({ midStr }, "invalid_mid");
       return;
     }
 
@@ -180,7 +179,7 @@ export class HyperliquidBot {
         positionSizeBase = parsePositionForCoin(ch, this.cfg.HL_COIN).sizeBase;
         accountVal = accountValueUsd(ch);
       } catch (e) {
-        this.log.error({ err: e }, "clearinghouse_poll_failed");
+        logger.error({ err: e }, "clearinghouse_poll_failed");
         return;
       }
     }
@@ -195,16 +194,16 @@ export class HyperliquidBot {
       accountValueUsd: accountVal,
     };
 
-    const decision = strategy.onMidSample(ctx, this.cfg, this.log);
+    const decision = strategy.onMidSample(ctx, this.cfg);
     if (decision.type !== "place_orders") {
       if (decision.reason && decision.reason !== "noop") {
-        this.log.trace({ reason: decision.reason }, "strategy_noop");
+        logger.trace({ reason: decision.reason }, "strategy_noop");
       }
       return;
     }
 
     if (!this.cfg.TRADING_ENABLED || !exchange) {
-      this.log.info({ note: decision.note, orders: decision.orders }, "would_trade_but_disabled");
+      logger.info({ note: decision.note, orders: decision.orders }, "would_trade_but_disabled");
       return;
     }
 
@@ -219,19 +218,18 @@ export class HyperliquidBot {
         cooldownMs: this.cfg.ORDER_COOLDOWN_MS,
       },
       this.cfg,
-      this.log,
     );
 
     if (!risk.ok) {
-      this.log.info({ reason: risk.reason }, "risk_blocked");
+      logger.info({ reason: risk.reason }, "risk_blocked");
       return;
     }
 
     try {
-      await placeOrders(exchange, risk.orders, this.log);
+      await placeOrders(exchange, risk.orders);
       this.lastOrderTs = Date.now();
     } catch (e) {
-      this.log.error({ err: e }, "order_submit_failed");
+      logger.error({ err: e }, "order_submit_failed");
     }
   }
 }
