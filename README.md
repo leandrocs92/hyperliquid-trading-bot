@@ -1,80 +1,180 @@
-# Hyperliquid Trading Bot 🤖
+# Hyperliquid Trading Bot
 
-TypeScript bot for [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) perpetuals: live mid prices over WebSocket, periodic account polling, pluggable strategy, risk checks, and optional order submission via [`@nktkas/hyperliquid`](https://www.npmjs.com/package/@nktkas/hyperliquid) and [viem](https://viem.sh/).
+> TypeScript + Node 20. Automates **Hyperliquid** perp workflows: WebSocket mids, periodic decisions, risk gates, optional signed orders via **`@nktkas/hyperliquid`** and **viem**.
 
+**Official docs:** [Hyperliquid GitBook](https://hyperliquid.gitbook.io/hyperliquid-docs)
 
-## Setup 🚀
+---
+
+## At a glance
+
+| Topic | Detail |
+|--------|--------|
+| **Language** | TypeScript (ES modules), compiled with `tsc` |
+| **Entry** | `src/main.ts` → `HyperliquidBot` in `src/bot.ts` |
+| **Config** | All runtime knobs from **environment variables**; validated with **Zod** in `src/config.ts` |
+| **Markets** | `HL_NETWORK` + `HL_COIN`; mids from WS `allMids` |
+| **Trading** | Off unless `TRADING_ENABLED` is truthy; requires `HL_PRIVATE_KEY` |
+| **Strategies** | `noop` (default) or `dual_ma` (example long-only MA on mids) |
+
+---
+
+## Quickstart
 
 ```bash
-cd hyperliquid-trading-bot
 npm install
-cp .env.example .env
+cp .env.example .env   # Windows: copy .env.example .env
 ```
 
-On Windows, use `copy .env.example .env` instead of `cp`.
+Edit `.env`, then:
 
-Edit `.env`. See [.env.example](.env.example) for every variable and short descriptions.
-
-## Scripts 🛠️
-
-| Command | Description |
-|--------|-------------|
-| `npm run dev` | Run with `tsx watch` (reload on file changes) |
-| `npm run build` | Compile to `dist/` |
-| `npm start` | Run compiled output (`node dist/main.js`) |
-| `npm run typecheck` | Typecheck without emitting files |
-
-## Configuration ⚙️
-
-All settings come from environment variables (loaded with [dotenv](https://github.com/motdotla/dotenv)). Important groups:
-
-- **Network:** `HL_NETWORK` (`mainnet` \| `testnet`)
-- **Market:** `HL_COIN` (e.g. `BTC` on the main DEX)
-- **Trading:** `TRADING_ENABLED`, `HL_PRIVATE_KEY` (required when trading is on)
-- **Read-only watch:** optional `HL_USER_ADDRESS` when not trading, to poll positions
-- **Risk:** `MAX_POSITION_USD`, `ORDER_NOTIONAL_USD`, `ORDER_COOLDOWN_MS`, `IOC_SLIPPAGE_BPS`
-- **Strategy:** `STRATEGY` (`noop` \| `dual_ma`) and `DUAL_MA_*` when using `dual_ma`
-- **Loop:** `TICK_INTERVAL_MS`
-
-On startup with trading enabled, the bot sets leverage with `updateLeverage`, using `HL_LEVERAGE` capped by the coin’s maximum from exchange metadata.
-
-## Project Layout 🗂️
-
-```
-src/
-  main.ts           # Entry, signals
-  bot.ts            # WS mids, tick loop, risk, execution
-  config.ts         # Zod-validated env
-  logger.ts         # pino
-  account.ts        # Clearinghouse helpers
-  risk.ts           # Pre-trade limits
-  execute.ts        # Order placement
-  strategy/
-    types.ts        # Strategy interface
-    noop.ts         # No orders
-    dualMa.ts       # Example long-only dual MA on mids
-    index.ts        # Strategy factory
+```bash
+npm run dev            # hot reload via tsx
+# or
+npm run build && npm start
 ```
 
-## Strategies 📈
+Use **`HL_NETWORK=testnet`** while you iterate. Treat `dual_ma` as **demo logic**, not a production alpha.
 
-- **`noop`** — Default. Connects and runs the loop but never submits orders.
-- **`dual_ma`** — Example only: long-only signals from fast vs slow average of **mid** samples. Not financial advice; replace with your own logic in `src/strategy/`.
+---
 
-### How `dual_ma` Works 🧠
+## Architecture
 
-The included trading strategy is a simple **long-only dual moving average crossover** built on Hyperliquid mid prices:
+```mermaid
+flowchart LR
+  subgraph inputs [Inputs]
+    ENV[.env / process.env]
+    WS[WebSocket allMids]
+    HTTP[HTTP Info / Exchange]
+  end
+  subgraph core [Core loop]
+    CFG[config.ts Zod]
+    BOT[bot.ts tick]
+    STR[strategy/]
+    RSK[risk.ts]
+    EXE[execute.ts]
+  end
+  ENV --> CFG
+  CFG --> BOT
+  WS --> BOT
+  HTTP --> BOT
+  BOT --> STR
+  STR --> RSK
+  RSK --> EXE
+  EXE --> HTTP
+```
 
-1. The bot collects recent mid-price samples from the WebSocket stream.
-2. It computes a **fast** moving average using the last `DUAL_MA_FAST` samples.
-3. It computes a **slow** moving average using the last `DUAL_MA_SLOW` samples.
-4. If the bot is flat and the fast average rises above the slow average by `DUAL_MA_BAND_BPS`, it submits an IOC buy order sized from `ORDER_NOTIONAL_USD`.
-5. If the bot is already long and the fast average drops below the slow average by the same band, it submits a reduce-only IOC sell order to exit.
+Each **tick** (`TICK_INTERVAL_MS`): read latest mid → update mid history → (if wallet known) fetch clearinghouse → strategy decision → optional risk layer → optional `exchange.order(...)`. Ticks **do not overlap**; if one tick is still running, the next scheduled tick is skipped with a warning.
 
-Notes:
+With **`TRADING_ENABLED=true`**, startup also runs **`updateLeverage`** (`HL_LEVERAGE`, `HL_CROSS_MARGIN`), clamped to the asset’s max leverage from metadata.
 
-- The strategy is **long-only**. It does not open short positions.
-- It uses **mid prices**, not candle closes or external indicators.
-- Entry and exit prices are offset by `IOC_SLIPPAGE_BPS` to improve the chance of immediate fills.
-- The bot now serializes its async tick loop so a slow cycle cannot overlap with the next one.
+---
 
+## Configuration reference
+
+Every variable below is read from the environment (see `loadConfig()` in `src/config.ts`). Invalid combinations fail fast with a clear error (for example: trading on without a private key, or `DUAL_MA_SLOW` ≤ `DUAL_MA_FAST`).
+
+### Connectivity and market
+
+- **`HL_NETWORK`** — `mainnet` \| `testnet`
+- **`HL_COIN`** — Perp name on the main DEX (e.g. `BTC`)
+
+### Wallets and trading
+
+- **`HL_PRIVATE_KEY`** — Optional unless `TRADING_ENABLED` is true; hex key, `0x` optional (normalized in code)
+- **`HL_USER_ADDRESS`** — Optional `0x` address; used to poll clearinghouse when you are not trading, or in addition to your trading wallet where applicable
+- **`TRADING_ENABLED`** — Default false; accepts `true` / `1` / `yes` / `on` (case-insensitive) to enable order submission
+
+### Leverage and margin
+
+- **`HL_LEVERAGE`** — Integer 1–125; capped by the coin’s maximum from the API
+- **`HL_CROSS_MARGIN`** — Boolean-ish env; cross vs isolated for leverage update
+
+### Risk and execution
+
+- **`MAX_POSITION_USD`** — Approximate cap on absolute position notional (uses mid)
+- **`ORDER_NOTIONAL_USD`** — Target notional per order (approximate, mid-based)
+- **`ORDER_COOLDOWN_MS`** — Minimum gap between successful submits
+- **`IOC_SLIPPAGE_BPS`** — IOC limit prices skewed from mid in basis points
+
+### Strategy and loop
+
+- **`STRATEGY`** — `noop` \| `dual_ma`
+- **`DUAL_MA_FAST`**, **`DUAL_MA_SLOW`**, **`DUAL_MA_BAND_BPS`** — Only for `dual_ma`; slow window must exceed fast
+- **`TICK_INTERVAL_MS`** — Loop period in ms (minimum **500**)
+
+### Observability
+
+- **`LOG_LEVEL`** — Default `info`; supports `trace` through `fatal` and `silent`
+
+The template [`.env.example`](.env.example) documents the same keys inline; add `LOG_LEVEL=info` there if you want it visible in every new clone.
+
+---
+
+## Source map
+
+| Path | Responsibility |
+|------|------------------|
+| `src/main.ts` | Load config, `setLogLevel`, construct bot, graceful shutdown on SIGINT/SIGTERM |
+| `src/bot.ts` | Hyperliquid clients, mids subscription, tick orchestration |
+| `src/config.ts` | Zod schema + `AppConfig` |
+| `src/logger.ts` | Shared `logger` + `setLogLevel` (ISO lines on stderr) |
+| `src/account.ts` | Clearinghouse parsing helpers |
+| `src/risk.ts` | Cooldown, per-order notional, projected max position |
+| `src/execute.ts` | Build batch order payload, call `ExchangeClient.order` |
+| `src/strategy/types.ts` | `Strategy`, `StrategyContext`, `OrderIntent` |
+| `src/strategy/noop.ts` | Never proposes orders |
+| `src/strategy/dualMa.ts` | Example dual moving average on stored mids |
+| `src/strategy/index.ts` | `createStrategy(config)` |
+
+---
+
+## Extending the bot
+
+1. Add a new strategy module under `src/strategy/`, implement `Strategy`, and register it in `src/strategy/index.ts` (and in the `STRATEGY` enum in `config.ts`).
+2. Keep **risk** assumptions explicit in `risk.ts` or tighten limits via env.
+3. Prefer **testnet** and **`noop`** until you trust the full path from mid → intent → signed payload.
+
+---
+
+## Logging in code
+
+```ts
+import { logger } from "./logger.js";
+
+logger.info("Connected");
+logger.warn("Stale mid", { coin: "BTC" });
+```
+
+`main.ts` calls `setLogLevel(cfg.LOG_LEVEL)` after validation so the process and modules share one level.
+
+---
+
+## Security checklist
+
+- Do not commit **`.env`** or keys.
+- Use a **low-balance** or **vault-segregated** key for experiments.
+- Read Hyperliquid’s latest guidance on signing, nonces, and API limits before mainnet automation.
+
+---
+
+## npm scripts
+
+| Script | Command |
+|--------|---------|
+| `dev` | `tsx watch src/main.ts` |
+| `build` | `tsc -p tsconfig.json` |
+| `start` | `node dist/main.js` |
+| `typecheck` | `tsc -p tsconfig.json --noEmit` |
+
+---
+
+## Stack (dependencies)
+
+Runtime: **`@nktkas/hyperliquid`**, **`viem`**, **`zod`**, **`dotenv`**. Dev: **`typescript`**, **`tsx`**, **`@types/node`**.
+
+---
+
+## Disclaimer
+
+Perpetual futures are **high risk**. This software is provided **as-is** for education and experimentation. You are solely responsible for capital deployed, compliance, and any losses. **Not financial advice.**
